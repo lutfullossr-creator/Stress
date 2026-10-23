@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Telefon Benchmark + Stres Test</title>
+<style>
+:root{--bg:#10141a;--card:#1a212b;--tx:#e8eef5;--mu:#8a98a8;--ac:#ff5a36;--ok:#3ddc97;--bd:#2a3340}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,Roboto,Arial,sans-serif}
+body{padding:16px;padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:520px;margin:auto}
+h1{font-size:22px;margin:0 0 4px}
+p.s{color:var(--mu);margin:0 0 14px;font-size:14px;line-height:1.4}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.c{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px}
+.c b{display:block;font-size:22px;margin-top:2px;font-variant-numeric:tabular-nums}
+.c span{color:var(--mu);font-size:12px}
+.w{grid-column:1/-1}
+.bar{height:8px;background:var(--bd);border-radius:4px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;width:0;background:var(--ac);transition:width .3s}
+select,button{width:100%;margin-top:10px;padding:15px;border-radius:10px;font-size:16px}
+select{background:var(--card);color:var(--tx);border:1px solid var(--bd)}
+button{border:0;font-weight:700;background:var(--ac);color:#fff}
+button.stop{background:#d6242c}button.sec{background:var(--card);border:1px solid var(--bd);display:none}
+canvas{width:100%;height:110px;display:block;margin-top:8px;border-radius:6px;background:#0c1015}
+#res{display:none}.big{font-size:46px!important;color:var(--ok)}
+.warn{color:#ffb020;font-size:13px;margin-top:12px;line-height:1.4}
+.lg{font-size:12px;color:var(--mu);margin-top:6px}.lg u{text-decoration:none;color:var(--ac)}.lg s{text-decoration:none;color:#5aa9ff}
+</style>
+</head>
+<body>
+<h1>Telefon benchmark + stres test</h1>
+<p class="s">Qat’iy hajmdagi ishlar bilan CPU (1 yadro / ko‘p yadro), xotira va GPU o‘lchanadi, so‘ng uzoq stres testda telefon qizib qanchalik sekinlashishi tekshiriladi.</p>
+
+<select id="dur">
+  <option value="180">Stres: 3 daqiqa</option>
+  <option value="300" selected>Stres: 5 daqiqa</option>
+  <option value="600">Stres: 10 daqiqa</option>
+</select>
+<button id="btn">Testni boshlash</button>
+
+<div class="g">
+  <div class="c w"><span id="phase">Tayyor</span><b id="time">0:00</b><div class="bar"><i id="pb"></i></div></div>
+  <div class="c"><span>CPU yadrolar</span><b id="cores">–</b></div>
+  <div class="c"><span>Batareya</span><b id="bat">–</b></div>
+  <div class="c"><span>CPU hozir (ball)</span><b id="cpuNow">0</b></div>
+  <div class="c"><span>GPU hozir (ball)</span><b id="gpuNow">0</b></div>
+  <div class="c w"><span>Stres davomida tezlik (boshlang‘ich = 100%)</span>
+    <canvas id="chart" width="480" height="110"></canvas>
+    <div class="lg"><u>■ CPU</u> &nbsp; <s>■ GPU</s></div></div>
+  <div class="c w" id="res">
+    <span>Umumiy ball</span><b class="big" id="total">0</b><b id="verdict" style="font-size:16px"></b>
+    <div class="g" style="margin-top:12px">
+      <div class="c"><span>1 yadro</span><b id="rS">–</b></div>
+      <div class="c"><span>Ko‘p yadro</span><b id="rM">–</b></div>
+      <div class="c"><span>GPU</span><b id="rG">–</b></div>
+      <div class="c"><span>Xotira</span><b id="rR">–</b></div>
+      <div class="c"><span>CPU barqarorlik</span><b id="rCS">–</b></div>
+      <div class="c"><span>GPU barqarorlik</span><b id="rGS">–</b></div>
+      <div class="c w"><span>Stres davomida batareya sarfi</span><b id="rB">–</b></div>
+    </div>
+    <button class="sec" id="cp" style="display:block">Natijani nusxalash</button>
+  </div>
+</div>
+
+<canvas id="gl" width="1024" height="1024" style="position:fixed;left:-9999px;width:64px;height:64px"></canvas>
+<div class="warn">Diqqat: stres paytida telefon qattiq qiziydi. Zaryadkaga ulamang, g‘ilofni yeching, qizib ketsa “To‘xtatish” ni bosing. Brauzer harorat sensoriga kira olmaydi, shuning uchun qizishni sekinlashish (throttling) orqali o‘lchaymiz, bu real ko‘rsatkich. Balllar nisbiy: 1000 ball = bir birlik ish 100 ms da bajarilishi.</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const WSRC=`
+function unit(){let c=0;
+ let h=2166136261;for(let i=0;i<1500000;i++){h=Math.imul(h^i,16777619);h^=h>>>13;}c^=h;
+ let x=0.5;for(let i=1;i<300000;i++){x=Math.sin(x)+Math.sqrt(i)*0.001;}c^=(x*1000)|0;
+ const N=48,a=new Float64Array(N*N),b=new Float64Array(N*N),r=new Float64Array(N*N);
+ for(let i=0;i<N*N;i++){a[i]=i%7+1;b[i]=i%5+1;}
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){let s=0;for(let k=0;k<N;k++)s+=a[i*N+k]*b[k*N+j];r[i*N+j]=s;}
+ c^=r[N+3]|0;
+ const L=200000,sv=new Uint8Array(L);let p=0;for(let i=2;i<L;i++){if(!sv[i]){p++;for(let j=i*2;j<L;j+=i)sv[j]=1;}}
+ return c^p;}
+let stop=false;
+onmessage=e=>{const d=e.data;
+ if(d.t==='bench'){for(let i=0;i<3;i++)unit();const t=performance.now();let c=0;for(let i=0;i<d.n;i++)c^=unit();postMessage({t:'done',ms:(performance.now()-t)/d.n,c});}
+ if(d.t==='stress'){stop=false;(function go(){if(stop)return;const t=performance.now();unit();postMessage({t:'u',ms:performance.now()-t});setTimeout(go,0);})();}
+ if(d.t==='stop')stop=true;};`;
+const wurl=URL.createObjectURL(new Blob([WSRC],{type:'text/javascript'}));
+
+let running=false,abort=false,workers=[],gl,loc,wake,batObj,batStart;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const fmt=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
+const cpuScore=ms=>1000*100/ms;
+const nCores=navigator.hardwareConcurrency||4;
+
+function initGL(){
+  gl=$('gl').getContext('webgl',{powerPreference:'high-performance'});
+  if(!gl)return false;
+  const vs='attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
+  const fs=`precision highp float;uniform float t;uniform vec2 r;
+  void main(){vec2 z=(gl_FragCoord.xy*2.-r)/r.y;float a=0.;
+  for(int i=0;i<200;i++){z=vec2(z.x*z.x-z.y*z.y,2.*z.x*z.y)+vec2(.285+.01*sin(t),.01*cos(t));a+=exp(-length(z));if(dot(z,z)>64.)break;}
+  float v=a*.05;gl_FragColor=vec4(v,v*.5,1.-v,1.);}`;
+  const sh=(ty,s)=>{const o=gl.createShader(ty);gl.shaderSource(o,s);gl.compileShader(o);return o};
+  const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,vs));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(pr);if(!gl.getProgramParameter(pr,gl.LINK_STATUS))return false;gl.useProgram(pr);
+  const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+  const pl=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(pl);gl.vertexAttribPointer(pl,2,gl.FLOAT,false,0,0);
+  loc={t:gl.getUniformLocation(pr,'t'),r:gl.getUniformLocation(pr,'r')};
+  gl.viewport(0,0,1024,1024);return true;
+}
+const px=new Uint8Array(4);
+function gpuFrame(i){ // bitta kadr: chizish + readPixels (GPU tugashini kutadi)
+  const t=performance.now();
+  gl.uniform1f(loc.t,i*0.1);gl.uniform2f(loc.r,1024,1024);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
+  return performance.now()-t;
+}
+const gpuScore=ms=>1000*40/ms; // 40 ms/kadr = 1000 ball
+
+function benchCPU(nw){return new Promise(res=>{
+  const ws=[],out=[];
+  for(let i=0;i<nw;i++){const w=new Worker(wurl);ws.push(w);
+    w.onmessage=e=>{out.push(e.data.ms);w.terminate();if(out.length===nw)res(out.reduce((a,m)=>a+cpuScore(m),0));};}
+  ws.forEach(w=>w.postMessage({t:'bench',n:25}));
+});}
+
+function benchMem(){
+  const N=1<<22,a=new Float64Array(N).fill(1.5),b=new Float64Array(N);
+  b.set(a);const t=performance.now();const R=25;for(let i=0;i<R;i++)b.set(a);
+  const s=(performance.now()-t)/1000;return (N*8*2*R)/s/1e9; // GB/s (o'qish+yozish)
+}
+
+async function benchGPU(){
+  for(let i=0;i<3;i++)gpuFrame(i);
+  let sum=0;const n=20;for(let i=0;i<n;i++){sum+=gpuFrame(i);if(i%4==0)await sleep(0);}
+  return gpuScore(sum/n);
+}
+
+function setPhase(t,p){$('phase').textContent=t;$('pb').style.width=p+'%';}
+
+async function initBat(){
+  try{batObj=await navigator.getBattery();batStart=batObj.level;batObj.onlevelchange=upBat;upBat();}
+  catch(e){batObj=null;$('bat').textContent='yo‘q';}
+}
+function upBat(){if(batObj)$('bat').textContent=Math.round(batObj.level*100)+'%'+(batObj.charging?' ⚡':'');}
+
+function drawChart(c1,g1){
+  const c=$('chart'),x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);
+  x.strokeStyle='#2a3340';x.lineWidth=1;x.beginPath();x.moveTo(0,c.height*.1);x.lineTo(c.width,c.height*.1);x.stroke();
+  const line=(a,col)=>{if(a.length<2)return;x.strokeStyle=col;x.lineWidth=2;x.beginPath();
+    a.forEach((v,i)=>{const X=i/(a.length-1)*c.width,Y=c.height-4-Math.min(v,110)/110*(c.height-8);i?x.lineTo(X,Y):x.moveTo(X,Y)});x.stroke();};
+  line(c1,'#ff5a36');line(g1,'#5aa9ff');
+}
+
+const R={};
+async function run(){
+  running=true;abort=false;$('res').style.display='none';
+  $('btn').textContent='To‘xtatish';$('btn').className='stop';
+  $('cores').textContent=nCores;
+  const hasGL=initGL();await initBat();
+  try{wake=await navigator.wakeLock.request('screen');}catch(e){}
+  const T0=performance.now();
+  const clock=setInterval(()=>$('time').textContent=fmt((performance.now()-T0)/1000),500);
+  try{
+    setPhase('1/5 · 1 yadro testi',5);await sleep(200);
+    R.single=await benchCPU(1);if(abort)throw 0;
+    setPhase('2/5 · Ko‘p yadro testi',20);await sleep(1500);
+    R.multi=await benchCPU(nCores);if(abort)throw 0;
+    setPhase('3/5 · Xotira tezligi',35);await sleep(200);
+    R.mem=benchMem();
+    setPhase('4/5 · GPU testi',42);await sleep(200);
+    R.gpu=hasGL?await benchGPU():0;if(abort)throw 0;
+    // ---- 5/5 stres ----
+    const DUR=+$('dur').value,WIN=5;
+    setPhase('5/5 · Stres test (CPU + GPU)',50);
+    const winU=[],winG=[];let cpuS=[],gpuS=[];let uc=0,gsum=0,gn=0;
+    workers=[];for(let i=0;i<nCores;i++){const w=new Worker(wurl);w.onmessage=e=>{uc+=cpuScore(e.data.ms)/ (1);winU.push(e.data.ms)};workers.push(w);w.postMessage({t:'stress'});}
+    const S0=performance.now();let lastW=S0,gi=0;
+    const batS=batObj?batObj.level:null;
+    while(!abort&&(performance.now()-S0)/1000<DUR){
+      if(hasGL){gsum+=gpuFrame(gi++);gn++;}
+      await sleep(0);
+      const now=performance.now();
+      if(now-lastW>=WIN*1000){
+        // CPU: barcha yadrolar bo'yicha o'rtacha birlik vaqti -> ko'p yadro ball
+        const avgMs=winU.reduce((a,b)=>a+b,0)/Math.max(1,winU.length);
+        const cs=cpuScore(avgMs)*nCores;cpuS.push(cs);
+        const gs=gn?gpuScore(gsum/gn):0;gpuS.push(gs);
+        $('cpuNow').textContent=Math.round(cs);$('gpuNow').textContent=Math.round(gs);
+        winU.length=0;gsum=0;gn=0;lastW=now;
+        drawChart(cpuS.map(v=>v/cpuS[0]*100),hasGL?gpuS.map(v=>v/gpuS[0]*100):[]);
+        const el=(now-S0)/1000;setPhase('5/5 · Stres test (CPU + GPU)',50+el/DUR*50);upBat();
+      }
+    }
+    workers.forEach(w=>{w.postMessage({t:'stop'});w.terminate()});workers=[];
+    // barqarorlik: oxirgi 20% / birinchi 20% oynalar
+    const k=Math.max(1,Math.floor(cpuS.length*.2));
+    const avg=a=>a.reduce((x,y)=>x+y,0)/a.length;
+    R.cpuStab=cpuS.length>=3?Math.min(100,avg(cpuS.slice(-k))/avg(cpuS.slice(0,k))*100):100;
+    R.gpuStab=hasGL&&gpuS.length>=3?Math.min(100,avg(gpuS.slice(-k))/avg(gpuS.slice(0,k))*100):0;
+    R.bat=batObj&&batS!=null?(batS-batObj.level)*100:null;
+    R.charging=batObj&&batObj.charging;
+    R.total=Math.round(R.single*.25+R.multi*.35+R.gpu*.4);
+    if(!hasGL)R.total=Math.round(R.single*.4+R.multi*.6);
+    show();
+  }catch(e){ if(e!==0)console.error(e); }
+  clearInterval(clock);
+  workers.forEach(w=>w.terminate());workers=[];
+  if(wake){wake.release().catch(()=>{});wake=null;}
+  running=false;$('btn').textContent='Qayta boshlash';$('btn').className='';
+  if(abort)setPhase('To‘xtatildi',0);
+}
+
+function show(){
+  setPhase('Tugadi',100);
+  $('total').textContent=R.total;
+  $('rS').textContent=Math.round(R.single);$('rM').textContent=Math.round(R.multi);
+  $('rG').textContent=R.gpu?Math.round(R.gpu):'yo‘q';$('rR').textContent=R.mem.toFixed(1)+' GB/s';
+  $('rCS').textContent=R.cpuStab.toFixed(0)+'%';$('rGS').textContent=R.gpu?R.gpuStab.toFixed(0)+'%':'–';
+  $('rB').textContent=R.bat==null?'o‘lchanmadi':(R.charging?'zaryadlanmoqda — aniq emas':R.bat.toFixed(1)+'%');
+  const t=R.total;
+  const lv=t>14000?'Flagman — juda kuchli':t>8000?'Yuqori daraja':t>4000?'O‘rta daraja':t>2000?'Byudjet telefon':'Zaif telefon';
+  const th=R.cpuStab>=90?'sovutishi a’lo':R.cpuStab>=75?'sovutishi yaxshi':R.cpuStab>=60?'qizib sezilarli sekinlashadi':'qattiq throttling';
+  $('verdict').textContent=lv+' · '+th;
+  $('res').style.display='block';$('res').scrollIntoView({behavior:'smooth'});
+}
+
+$('btn').onclick=()=>{if(running){abort=true;}else run();};
+$('cp').onclick=()=>{
+  const s=`Telefon benchmark: Umumiy ${R.total} | 1 yadro ${Math.round(R.single)} | Ko'p yadro ${Math.round(R.multi)} | GPU ${Math.round(R.gpu)} | Xotira ${R.mem.toFixed(1)} GB/s | CPU barqarorlik ${R.cpuStab.toFixed(0)}% | GPU barqarorlik ${R.gpuStab.toFixed(0)}%`;
+  navigator.clipboard&&navigator.clipboard.writeText(s);$('cp').textContent='Nusxalandi';
+};
+$('cores').textContent=nCores;
+</script>
+</body>
+</html>
