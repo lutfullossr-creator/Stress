@@ -7,6 +7,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: src.zip ni ochish
+        run: |
+          if [ -f src.zip ]; then rm -rf app settings.gradle.kts; unzip -o src.zip; fi
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
